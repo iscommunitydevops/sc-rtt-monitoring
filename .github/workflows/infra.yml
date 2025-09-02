@@ -64,16 +64,29 @@ jobs:
 
       - name: Save Terraform outputs
         run: terraform output -json > tf-outputs.json
+      
+      - name: Runner debug (net)
+        run: |
+          set -x
+          uname -a
+          whoami
+          ip -brief a || ip a || true
+          curl -s https://ifconfig.me || true
+          sudo apt-get update && sudo apt-get install -y netcat-openbsd jq || true
+          VM1=$(jq -r '.vm1_public_ip.value' tf-outputs.json)
+          echo "VM1=$VM1"
+          # quick TCP check
+          nc -vz -w 3 "$VM1" 22 || true
+          # raw /dev/tcp check
+          timeout 5 bash -lc "echo >/dev/tcp/${VM1}/22" && echo "tcp/22 open" || echo "tcp/22 closed"
 
       - name: Wait for SSH on VM1
         run: |
           VM1=$(jq -r '.vm1_public_ip.value' tf-outputs.json)
           echo "VM1=$VM1"
-          for i in $(seq 1 60); do
-            if timeout 5 bash -lc "echo >/dev/tcp/${VM1}/22" 2>/dev/null; then
-              echo "SSH is up"
-              break
-            fi
+          tries=12                 # hard limit ~10min
+          until timeout 5 bash -lc "echo >/dev/tcp/${VM1}/22" 2>/dev/null; do
+            ((tries--)) || { echo "ERROR: SSH port 22 did not open in time"; exit 1; }
             echo "Waiting for SSH..."
             sleep 5
           done
