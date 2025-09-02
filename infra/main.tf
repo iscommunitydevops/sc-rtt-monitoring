@@ -3,6 +3,7 @@ locals {
   vpc_net_bits          = tonumber(split("/", var.vpc2_cidr)[1])
   allowed_ssh_parts     = split("/", trimspace(var.allowed_cidr_ssh))
   allowed_grafana_parts = split("/", trimspace(var.allowed_cidr_grafana))
+  runner_ssh_parts = var.runner_ssh_cidr != "" ? split("/", trimspace(var.runner_ssh_cidr)) : null
 }
 
 resource "vultr_vpc" "mon" {
@@ -67,6 +68,17 @@ resource "vultr_firewall_rule" "vm1_ssh_from_vm2" {
   port              = "22"
   subnet            = vultr_instance.vm2.internal_ip
   subnet_size       = 32
+}
+
+
+resource "vultr_firewall_rule" "vm1_ssh_from_runner" {
+  count             = var.runner_ssh_cidr != "" ? 1 : 0
+  firewall_group_id = vultr_firewall_group.fg_vm1.id
+  ip_type           = "v4"
+  protocol          = "tcp"
+  port              = "22"
+  subnet            = local.runner_ssh_parts[0]
+  subnet_size       = tonumber(local.runner_ssh_parts[1])
 }
 
 resource "vultr_firewall_rule" "vm1_ssh_from_allowed" {

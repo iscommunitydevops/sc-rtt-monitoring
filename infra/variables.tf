@@ -81,3 +81,8 @@ variable "influx_url" {
   type    = string
   default = "http://influxdb:8086"
 }
+
+variable "runner_ssh_cidr" {
+  type    = string
+  default = ""
+}
