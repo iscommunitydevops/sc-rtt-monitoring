@@ -1,0 +1,73 @@
+name: infra-apply
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "infra/**"
+      - ".github/workflows/infra.yml"
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    env:
+      # Terraform vars
+      TF_VAR_allowed_cidr_ssh: ${{ secrets.TF_VAR_allowed_cidr_ssh }}
+      TF_VAR_allowed_cidr_grafana: ${{ secrets.TF_VAR_allowed_cidr_grafana }}
+      TF_VAR_influx_token: ${{ secrets.TF_VAR_influx_token }}
+      TF_VAR_influx_org: ${{ secrets.TF_VAR_influx_org }}
+      TF_VAR_influx_bucket: ${{ secrets.TF_VAR_influx_bucket }}
+      TF_VAR_influx_url: ${{ secrets.TF_VAR_influx_url }}
+      VULTR_API_KEY: ${{ secrets.VULTR_API_KEY }}
+
+    defaults:
+      run:
+        working-directory: infra   
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Write SSH private key
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+      - name: Derive public key -> TF_VAR_ssh_public_key
+        shell: bash
+        run: |
+          PUB=$(ssh-keygen -y -f ~/.ssh/id_ed25519)
+          echo "TF_VAR_ssh_public_key=$PUB" >> $GITHUB_ENV
+
+      - name: Terraform init
+        run: terraform init -input=false
+
+      - name: Terraform plan
+        run: terraform plan -input=false -out=tfplan
+
+      - name: Terraform apply
+        run: terraform apply -input=false -auto-approve tfplan
+
+      - name: Save Terraform outputs
+        run: terraform output -json > tf-outputs.json
+
+      # Smoke check over SSH
+      - name: Read VM1 public IP
+        id: ip
+        run: |
+          VM1=$(jq -r '.vm1_public_ip.value' tf-outputs.json)
+          echo "vm1_ip=$VM1" >> $GITHUB_OUTPUT
+
+      - name: Smoke check (uname, docker ps)
+        if: ${{ steps.ip.outputs.vm1_ip != '' }}
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 \
+            ${{ secrets.SSH_USERNAME }}@${{ steps.ip.outputs.vm1_ip }} \
+            'uname -a || true; docker ps || true'

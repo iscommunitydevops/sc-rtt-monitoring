@@ -1,0 +1,44 @@
+name: infra-destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type 'DESTROY' to confirm"
+        required: true
+        type: string
+
+jobs:
+  destroy:
+    # Hard safety guard
+    if: ${{ github.event.inputs.confirm == 'DESTROY' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    env:
+      # Terraform vars (must match apply)
+      TF_VAR_allowed_cidr_ssh: ${{ secrets.TF_VAR_allowed_cidr_ssh }}
+      TF_VAR_allowed_cidr_grafana: ${{ secrets.TF_VAR_allowed_cidr_grafana }}
+      TF_VAR_influx_token: ${{ secrets.TF_VAR_influx_token }}
+      TF_VAR_influx_org: ${{ secrets.TF_VAR_influx_org }}
+      TF_VAR_influx_bucket: ${{ secrets.TF_VAR_influx_bucket }}
+      TF_VAR_influx_url: ${{ secrets.TF_VAR_influx_url }}
+      VULTR_API_KEY: ${{ secrets.VULTR_API_KEY }}
+
+    defaults:
+      run:
+        working-directory: infra
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform init
+        run: terraform init -input=false
+
+      - name: Terraform destroy
+        run: terraform destroy -auto-approve -input=false
