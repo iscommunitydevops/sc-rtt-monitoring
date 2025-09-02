@@ -7,6 +7,7 @@ packages:
   - fping
   - ca-certificates
   - curl
+  - git
 
 groups: [docker]
 users:
@@ -19,25 +20,25 @@ write_files:
   - path: /etc/app/deploy.env
     permissions: "0644"
     content: |
-      # Artifact and routing settings
-      ARTIFACT_URL="https://<CI-ARTIFACT-URL>/app-bundle.tar.gz"
-      VM2_VPC_IP="<VM2-GATEWAY-IP>"
+      # Routing
+      VM2_VPC_IP=${VM2_VPC_IP}
+      # App source
+      REPO_URL=${REPO_URL}
+      REPO_REF=${REPO_REF}
+      APP_SUBDIR=${APP_SUBDIR}
+      # Optional: GitHub token for private repo
+      # GITHUB_TOKEN=
 
-  - path: /usr/local/sbin/app-fetch-and-unpack.sh
-    permissions: "0755"
+  - path: /opt/app/netprobe.env
+    permissions: "0644"
     content: |
-      #!/usr/bin/env bash
-      set -euo pipefail
-      . /etc/app/deploy.env
-      APP_DIR="/opt/app"
-      TMP_DIR="/tmp/app-artifact"
-      mkdir -p "${APP_DIR}" "${TMP_DIR}"
-      # Fetch and unpack artifact
-      curl -fsSL "${ARTIFACT_URL}" -o "${TMP_DIR}/bundle.tar.gz"
-      tar -xzf "${TMP_DIR}/bundle.tar.gz" -C "${APP_DIR}" --strip-components=1
-      test -f "${APP_DIR}/docker-compose.yml"
-      chown -R root:root "${APP_DIR}"
-      find "${APP_DIR}" -type f -name "*.sh" -exec chmod +x {} \;
+      INFLUX_URL=${INFLUX_URL}
+      INFLUX_TOKEN=${INFLUX_TOKEN}
+      INFLUX_ORG=${INFLUX_ORG}
+      INFLUX_BUCKET=${INFLUX_BUCKET}
+      PROBE_NAME=vm1
+      PROBE_REGION=home
+      PROBE_SITE=lab
 
   - path: /usr/local/sbin/set-default-via-vpc.sh
     permissions: "0755"
@@ -48,17 +49,58 @@ write_files:
       [[ -n "${VM2_VPC_IP:-}" ]] || exit 0
       ip route replace default via "${VM2_VPC_IP}" metric 50
 
-  - path: /etc/systemd/system/app-fetch.service
+  - path: /usr/local/sbin/app-sync-from-repo.sh
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      # Sync /opt/app from GitHub repo (subdir), then ensure compose files exist.
+      set -euo pipefail
+      . /etc/app/deploy.env
+      APP_DIR="/opt/app"
+      TMP_DIR="/tmp/app-src"
+      SRC_TGZ="/tmp/src.tgz"
+
+      rm -rf "${TMP_DIR}" "${SRC_TGZ}"
+      mkdir -p "${TMP_DIR}" "${APP_DIR}"
+
+      if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+        # Private repo
+        curl -fsSL -H "Authorization: token ${GITHUB_TOKEN}" \
+          "${REPO_URL}/archive/refs/heads/${REPO_REF}.tar.gz" -o "${SRC_TGZ}"
+      else
+        # Public repo
+        curl -fsSL "${REPO_URL}/archive/refs/heads/${REPO_REF}.tar.gz" -o "${SRC_TGZ}"
+      fi
+
+      tar -xzf "${SRC_TGZ}" -C "${TMP_DIR}"
+      ROOT_DIR="$(find "${TMP_DIR}" -maxdepth 1 -mindepth 1 -type d | head -n1)"
+
+      if [[ -n "${APP_SUBDIR:-}" ]]; then
+        SRC_DIR="${ROOT_DIR}/${APP_SUBDIR}"
+      else
+        SRC_DIR="${ROOT_DIR}"
+      fi
+
+      if [[ ! -f "${SRC_DIR}/docker-compose.yml" ]]; then
+        echo "docker-compose.yml not found in ${SRC_DIR}" >&2
+        exit 1
+      fi
+
+      rsync -a --delete "${SRC_DIR}/" "${APP_DIR}/"
+      chown -R root:root "${APP_DIR}"
+
+  - path: /etc/systemd/system/app-sync.service
     permissions: "0644"
     content: |
       [Unit]
-      Description=Fetch app artifact
+      Description=Sync app files from repo
       After=network-online.target
       Wants=network-online.target
 
       [Service]
       Type=oneshot
-      ExecStart=/usr/local/sbin/app-fetch-and-unpack.sh
+      EnvironmentFile=/etc/app/deploy.env
+      ExecStart=/usr/local/sbin/app-sync-from-repo.sh
 
       [Install]
       WantedBy=multi-user.target
@@ -68,8 +110,8 @@ write_files:
     content: |
       [Unit]
       Description=Run docker compose stack
-      After=docker.service app-fetch.service
-      Wants=docker.service app-fetch.service
+      After=docker.service app-sync.service
+      Wants=docker.service app-sync.service
 
       [Service]
       Type=oneshot
@@ -86,7 +128,7 @@ runcmd:
   - bash -lc 'usermod -aG docker ubuntu || true'
   - bash -lc '/usr/local/sbin/set-default-via-vpc.sh || true'
   - systemctl daemon-reload
-  - systemctl enable --now app-fetch.service
+  - systemctl enable --now app-sync.service
   - systemctl enable --now app-compose.service
 
-final_message: "VM1 ready: artifact fetched, docker compose running via systemd."
+final_message: "VM1 ready: repo synced, docker compose running."

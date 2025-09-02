@@ -12,6 +12,11 @@ resource "vultr_vpc" "mon" {
   v4_subnet_mask = local.vpc_net_bits
 }
 
+resource "vultr_ssh_key" "gh_runner" {
+  name    = "gh-runner"
+  ssh_key = var.ssh_public_key
+}
+
 resource "vultr_firewall_group" "fg_vm2" {
   description = "fw-vm2-router"
 }
@@ -48,6 +53,7 @@ resource "vultr_instance" "vm2" {
   firewall_group_id = vultr_firewall_group.fg_vm2.id
   user_data         = file("${path.module}/cloud-init/vm2-router.yaml")
   tags              = ["router", "nat", "monitoring"]
+  ssh_key_ids       = [vultr_ssh_key.gh_runner.id]
 
   lifecycle {
     create_before_destroy = true
@@ -61,6 +67,15 @@ resource "vultr_firewall_rule" "vm1_ssh_from_vm2" {
   port              = "22"
   subnet            = vultr_instance.vm2.internal_ip
   subnet_size       = 32
+}
+
+resource "vultr_firewall_rule" "vm1_ssh_from_allowed" {
+  firewall_group_id = vultr_firewall_group.fg_vm1.id
+  ip_type           = "v4"
+  protocol          = "tcp"
+  port              = "22"
+  subnet            = local.allowed_ssh_parts[0]
+  subnet_size       = tonumber(local.allowed_ssh_parts[1])
 }
 
 resource "vultr_firewall_rule" "vm1_grafana" {
@@ -88,8 +103,15 @@ locals {
     INFLUX_BUCKET = var.influx_bucket
     INFLUX_TOKEN  = var.influx_token
     INFLUX_URL    = var.influx_url
+    REPO_URL     = var.repo_url
+    REPO_REF     = var.repo_ref
+    APP_SUBDIR   = var.app_subdir
   })
 }
+
+variable "repo_url"  { type = string, default = "https://github.com/iscommunitydevops/sc-rtt-monitoring" }
+variable "repo_ref"  { type = string, default = "main" }
+variable "app_subdir"{ type = string, default = "monitor-docker" } # "" if compose in repo root
 
 resource "vultr_instance" "vm1" {
   label             = "vm1-app"
@@ -102,8 +124,10 @@ resource "vultr_instance" "vm1" {
   firewall_group_id = vultr_firewall_group.fg_vm1.id
   user_data         = local.vm1_userdata
   tags              = ["app", "telegraf", "influxdb", "grafana"]
+  ssh_key_ids       = [vultr_ssh_key.gh_runner.id]
 
   lifecycle {
     create_before_destroy = true
   }
 }
+

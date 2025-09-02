@@ -15,6 +15,11 @@ variable "os_id" {
   description = "Ubuntu 24.04"
 }
 
+# SSH public key for instances
+variable "ssh_public_key" {
+  type = string
+}
+
 # --- Plans ---
 variable "plan_vm2" {
   type    = string
@@ -69,6 +74,7 @@ variable "influx_bucket" {
 
 variable "influx_token" {
   type = string
+  sensitive = true 
 }
 
 variable "influx_url" {
