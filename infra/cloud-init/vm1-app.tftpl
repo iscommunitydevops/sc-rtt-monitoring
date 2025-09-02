@@ -46,7 +46,7 @@ write_files:
       #!/usr/bin/env bash
       set -euo pipefail
       . /etc/app/deploy.env
-      [[ -n "${VM2_VPC_IP:-}" ]] || exit 0
+      [[ -n "$${VM2_VPC_IP:-}" ]] || exit 0
       ip route replace default via "${VM2_VPC_IP}" metric 50
 
   - path: /usr/local/sbin/app-sync-from-repo.sh
