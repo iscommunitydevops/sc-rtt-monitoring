@@ -8,6 +8,7 @@ packages:
   - ca-certificates
   - curl
   - git
+  - rsync
 
 groups: [docker]
 users:
@@ -60,34 +61,34 @@ write_files:
       TMP_DIR="/tmp/app-src"
       SRC_TGZ="/tmp/src.tgz"
 
-      rm -rf "${TMP_DIR}" "${SRC_TGZ}"
-      mkdir -p "${TMP_DIR}" "${APP_DIR}"
+      rm -rf "$${TMP_DIR}" "$${SRC_TGZ}"
+      mkdir -p "$${TMP_DIR}" "$${APP_DIR}"
 
-      if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+      if [[ -n "$${GITHUB_TOKEN:-}" ]]; then
         # Private repo
-        curl -fsSL -H "Authorization: token ${GITHUB_TOKEN}" \
-          "${REPO_URL}/archive/refs/heads/${REPO_REF}.tar.gz" -o "${SRC_TGZ}"
+        curl -fsSL -H "Authorization: token $${GITHUB_TOKEN}" \
+          "$${REPO_URL}/archive/refs/heads/$${REPO_REF}.tar.gz" -o "$${SRC_TGZ}"
       else
         # Public repo
-        curl -fsSL "${REPO_URL}/archive/refs/heads/${REPO_REF}.tar.gz" -o "${SRC_TGZ}"
+        curl -fsSL "$${REPO_URL}/archive/refs/heads/$${REPO_REF}.tar.gz" -o "$${SRC_TGZ}"
       fi
 
-      tar -xzf "${SRC_TGZ}" -C "${TMP_DIR}"
-      ROOT_DIR="$(find "${TMP_DIR}" -maxdepth 1 -mindepth 1 -type d | head -n1)"
+      tar -xzf "$${SRC_TGZ}" -C "$${TMP_DIR}"
+      ROOT_DIR="$(find "$${TMP_DIR}" -maxdepth 1 -mindepth 1 -type d | head -n1)"
 
-      if [[ -n "${APP_SUBDIR:-}" ]]; then
-        SRC_DIR="${ROOT_DIR}/${APP_SUBDIR}"
+      if [[ -n "$${APP_SUBDIR:-}" ]]; then
+        SRC_DIR="$${ROOT_DIR}/$${APP_SUBDIR}"
       else
-        SRC_DIR="${ROOT_DIR}"
+        SRC_DIR="$${ROOT_DIR}"
       fi
 
-      if [[ ! -f "${SRC_DIR}/docker-compose.yml" ]]; then
-        echo "docker-compose.yml not found in ${SRC_DIR}" >&2
+      if [[ ! -f "$${SRC_DIR}/docker-compose.yml" ]]; then
+        echo "docker-compose.yml not found in $${SRC_DIR}" >&2
         exit 1
       fi
 
-      rsync -a --delete "${SRC_DIR}/" "${APP_DIR}/"
-      chown -R root:root "${APP_DIR}"
+      rsync -a --delete "$${SRC_DIR}/" "$${APP_DIR}/"
+      chown -R root:root "$${APP_DIR}"
 
   - path: /etc/systemd/system/app-sync.service
     permissions: "0644"
