@@ -39,11 +39,21 @@ variable "vpc2_cidr" {
 
 
 variable "allowed_cidr_ssh" {
-  type = string # e.g. "X.X.X.X/32"
+  type        = string
+  description = "CIDR for SSH, e.g. 203.0.113.5/32"
+  validation {
+    condition     = can(regex("^\\d+\\.\\d+\\.\\d+\\.\\d+/\\d{1,2}$", var.allowed_cidr_ssh))
+    error_message = "allowed_cidr_ssh must be IPv4 CIDR like X.X.X.X/32."
+  }
 }
 
 variable "allowed_cidr_grafana" {
-  type = string # e.g. "X.X.X.X/32"
+  type        = string
+  description = "CIDR for Grafana, e.g. 203.0.113.5/32"
+  validation {
+    condition     = can(regex("^\\d+\\.\\d+\\.\\d+\\.\\d+/\\d{1,2}$", var.allowed_cidr_grafana))
+    error_message = "allowed_cidr_grafana must be IPv4 CIDR like X.X.X.X/32."
+  }
 }
 
 # --- App settings ---
@@ -63,5 +73,5 @@ variable "influx_token" {
 
 variable "influx_url" {
   type    = string
-  default = "http://localhost:8086"
+  default = "http://influxdb:8086"
 }
