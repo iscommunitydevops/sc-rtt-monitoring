@@ -1,0 +1,120 @@
+{
+  "title": "Netprobe ICMP",
+  "uid": "netprobe-icmp",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "tags": ["netprobe", "icmp", "fping"],
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "target",
+        "label": "Target",
+        "type": "query",
+        "datasource": { "type": "influxdb", "uid": "influxdb-flux" },
+        "refresh": 1,
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: v.bucket, tag: \"target\")",
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "RTT (ms) by Target",
+      "description": "Mean RTT per target aggregated by time window.",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 10 },
+      "datasource": { "type": "influxdb", "uid": "influxdb-flux" },
+      "fieldConfig": { "defaults": { "unit": "ms", "displayName": "{{result}} • {{target}}" } },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+          {
+    "refId": "A",
+    "query": "from(bucket: v.bucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"netprobe_icmp\" and r._field == \"rtt_ms\")\n  |> filter(fn: (r) => r.target =~ /${target}/)\n  |> aggregateWindow(every: v.windowPeriod, fn: min, createEmpty: false)\n  |> yield(name: \"min\")"
+  },
+  {
+    "refId": "B",
+    "query": "from(bucket: v.bucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"netprobe_icmp\" and r._field == \"rtt_ms\")\n  |> filter(fn: (r) => r.target =~ /${target}/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> yield(name: \"avg\")"
+  },
+  {
+    "refId": "C",
+    "query": "from(bucket: v.bucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"netprobe_icmp\" and r._field == \"rtt_ms\")\n  |> filter(fn: (r) => r.target =~ /${target}/)\n  |> aggregateWindow(every: v.windowPeriod, fn: max, createEmpty: false)\n  |> yield(name: \"max\")"
+  },
+  {
+    "refId": "D",
+    "query": "from(bucket: v.bucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"netprobe_icmp\" and r._field == \"rtt_ms\")\n  |> filter(fn: (r) => r.target =~ /${target}/)\n  |> aggregateWindow(\n       every: v.windowPeriod,\n       fn: (tables=<-, column) => quantile(tables: tables, q: 0.95, method: \"estimate_tdigest\", column: \"_value\"),\n       createEmpty: false\n     )\n  |> yield(name: \"p95\")"
+  }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Current Packet Loss (%)",
+      "description": "Last observed loss_pct for the selected targets.",
+      "gridPos": { "x": 0, "y": 10, "w": 8, "h": 6 },
+      "datasource": { "type": "influxdb", "uid": "influxdb-flux" },
+      "fieldConfig": { "defaults": { "unit": "percent", "decimals": 2 } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: v.bucket)\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"netprobe_icmp\" and r._field == \"loss_pct\")\n  |> filter(fn: (r) => r.target =~ /${target}/)\n  |> last()"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "RTT p95 (ms)",
+      "description": "95th percentile of RTT per target over time.",
+      "gridPos": { "x": 8, "y": 10, "w": 16, "h": 6 },
+      "datasource": { "type": "influxdb", "uid": "influxdb-flux" },
+      "fieldConfig": { "defaults": { "unit": "ms", "decimals": 2 } },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: v.bucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"netprobe_icmp\" and r._field == \"rtt_ms\")\n  |> filter(fn: (r) => r.target =~ /${target}/)\n  |> aggregateWindow(\n       every: v.windowPeriod,\n       fn: (tables=<-, column) => quantile(tables: tables, q: 0.95, method: \"estimate_tdigest\", column: \"_value\"),\n       createEmpty: false\n     )\n  |> yield(name: \"p95\")"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      }
+    },
+    {
+      "type": "table",
+      "title": "Last Snapshot (RTT & Loss)",
+      "description": "Per-target last values for RTT and packet loss.",
+      "gridPos": { "x": 0, "y": 16, "w": 24, "h": 8 },
+      "datasource": { "type": "influxdb", "uid": "influxdb-flux" },
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: v.bucket)\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"netprobe_icmp\" and (r._field == \"rtt_ms\" or r._field == \"loss_pct\"))\n  |> filter(fn: (r) => r.target =~ /${target}/)\n  |> group(columns: [\"target\", \"_field\"]) \n  |> last()\n  |> pivot(rowKey:[\"_time\"], columnKey:[\"_field\"], valueColumn:\"_value\")\n  |> keep(columns: [\"_time\", \"target\", \"rtt_ms\", \"loss_pct\"])"
+        }
+      ]
+    },
+    {
+      "type": "bargauge",
+      "title": "Top 10 by Loss (mean over last 15m)",
+      "description": "Targets with highest average loss over the last 15 minutes.",
+      "gridPos": { "x": 0, "y": 24, "w": 24, "h": 8 },
+      "datasource": { "type": "influxdb", "uid": "influxdb-flux" },
+      "fieldConfig": { "defaults": { "unit": "percent", "decimals": 2 } },
+      "options": { "displayMode": "basic", "orientation": "horizontal" },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: v.bucket)\n  |> range(start: -15m)\n  |> filter(fn: (r) => r._measurement == \"netprobe_icmp\" and r._field == \"loss_pct\")\n  |> filter(fn: (r) => r.target =~ /${target}/)\n  |> aggregateWindow(every: 1m, fn: mean, createEmpty: false)\n  |> group(columns: [\"target\"]) \n  |> last()\n  |> sort(columns: [\"_value\"], desc: true)\n  |> limit(n: 10)"
+        }
+      ]
+    }
+  ]
+}

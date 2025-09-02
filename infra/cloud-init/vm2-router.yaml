@@ -1,0 +1,11 @@
+package_update: true
+packages:
+  - iptables-persistent
+write_files:
+  - path: /etc/sysctl.d/99-ipforward.conf
+    content: |
+      net.ipv4.ip_forward=1
+runcmd:
+  - sysctl -p /etc/sysctl.d/99-ipforward.conf
+  - iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+  - netfilter-persistent save

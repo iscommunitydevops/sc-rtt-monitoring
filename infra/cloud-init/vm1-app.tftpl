@@ -1,0 +1,92 @@
+#cloud-config
+package_update: true
+packages:
+  - docker.io
+  - docker-compose-plugin
+  - jq
+  - fping
+  - ca-certificates
+  - curl
+
+groups: [docker]
+users:
+  - default
+  - name: ubuntu
+    groups: [docker]
+    shell: /bin/bash
+
+write_files:
+  - path: /etc/app/deploy.env
+    permissions: "0644"
+    content: |
+      # Artifact and routing settings
+      ARTIFACT_URL="https://<CI-ARTIFACT-URL>/app-bundle.tar.gz"
+      VM2_VPC_IP="<VM2-GATEWAY-IP>"
+
+  - path: /usr/local/sbin/app-fetch-and-unpack.sh
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      . /etc/app/deploy.env
+      APP_DIR="/opt/app"
+      TMP_DIR="/tmp/app-artifact"
+      mkdir -p "${APP_DIR}" "${TMP_DIR}"
+      # Fetch and unpack artifact
+      curl -fsSL "${ARTIFACT_URL}" -o "${TMP_DIR}/bundle.tar.gz"
+      tar -xzf "${TMP_DIR}/bundle.tar.gz" -C "${APP_DIR}" --strip-components=1
+      test -f "${APP_DIR}/docker-compose.yml"
+      chown -R root:root "${APP_DIR}"
+      find "${APP_DIR}" -type f -name "*.sh" -exec chmod +x {} \;
+
+  - path: /usr/local/sbin/set-default-via-vpc.sh
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      . /etc/app/deploy.env
+      [[ -n "${VM2_VPC_IP:-}" ]] || exit 0
+      ip route replace default via "${VM2_VPC_IP}" metric 50
+
+  - path: /etc/systemd/system/app-fetch.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Fetch app artifact
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/sbin/app-fetch-and-unpack.sh
+
+      [Install]
+      WantedBy=multi-user.target
+
+  - path: /etc/systemd/system/app-compose.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Run docker compose stack
+      After=docker.service app-fetch.service
+      Wants=docker.service app-fetch.service
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=true
+      WorkingDirectory=/opt/app
+      EnvironmentFile=-/opt/app/.env
+      ExecStart=/usr/bin/docker compose up -d --remove-orphans
+      ExecStop=/usr/bin/docker compose down
+
+      [Install]
+      WantedBy=multi-user.target
+
+runcmd:
+  - bash -lc 'usermod -aG docker ubuntu || true'
+  - bash -lc '/usr/local/sbin/set-default-via-vpc.sh || true'
+  - systemctl daemon-reload
+  - systemctl enable --now app-fetch.service
+  - systemctl enable --now app-compose.service
+
+final_message: "VM1 ready: artifact fetched, docker compose running via systemd."

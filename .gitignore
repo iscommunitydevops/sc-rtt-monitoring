@@ -1,0 +1,29 @@
+# OS/IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Terraform
+infra/.terraform/
+infra/terraform.tfstate
+infra/terraform.tfstate.*
+infra/crash.log
+# Keep provider lock for reproducible builds
+#! infra/.terraform.lock.hcl
+
+# Docker Compose local overrides
+monitor-docker/docker-compose.override.yml
+
+# Secrets/env (commit only *.example)
+monitor-docker/*.env
+monitor-docker/**/*.env
+
+# Local data (bind/volume mounts)
+monitor-docker/grafana-data/
+monitor-docker/influxdb-data/
+monitor-docker/config/
+
+# Logs
+**/*.log
+logs/

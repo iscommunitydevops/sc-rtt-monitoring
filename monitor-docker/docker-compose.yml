@@ -1,0 +1,55 @@
+
+networks:
+  monitoring:
+    driver: bridge
+
+volumes:
+  influxdb-data:
+  grafana-data:
+
+services:
+  influxdb:
+    image: influxdb:2.7
+    container_name: influxdb
+    restart: unless-stopped
+    networks: [monitoring]
+    ports:
+      - "8086:8086"   # InfluxDB UI/API
+    env_file:
+      - ./netprobe.env
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: grafana
+    restart: unless-stopped
+    networks: [monitoring]
+    ports:
+      - "3000:3000"   # Grafana UI
+    env_file:
+      - ./netprobe.env
+    volumes:
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - influxdb
+
+  telegraf:
+    build:
+      context: ./
+      dockerfile: ./telegraf/Dockerfile
+    container_name: telegraf
+    restart: unless-stopped
+    networks: [monitoring]
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    env_file:
+      - ./netprobe.env
+    volumes:
+      - ./telegraf/telegraf.d:/etc/telegraf/telegraf.d:rw
+      # - ./telegraf/scripts:/opt/netprobe/scripts:ro
+      - ./config:/config:ro
+    depends_on:
+      - influxdb
