@@ -109,9 +109,20 @@ locals {
   })
 }
 
-variable "repo_url"  { type = string, default = "https://github.com/iscommunitydevops/sc-rtt-monitoring" }
-variable "repo_ref"  { type = string, default = "main" }
-variable "app_subdir"{ type = string, default = "monitor-docker" } # "" if compose in repo root
+variable "repo_url" {
+  type    = string
+  default = "https://github.com/iscommunitydevops/sc-rtt-monitoring"
+}
+
+variable "repo_ref" {
+  type    = string
+  default = "main"
+}
+
+variable "app_subdir" {
+  type        = string
+  default     = "monitor-docker" # empty ("") if compose at repo root
+}
 
 resource "vultr_instance" "vm1" {
   label             = "vm1-app"
